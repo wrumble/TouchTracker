@@ -7,7 +7,7 @@
 //
 
 import UIKit
-class Drawview: UIView {
+class DrawView: UIView, UIGestureRecognizerDelegate {
     
     var currentLines = [NSValue: Line]()
     var finishedLines = [Line]()
@@ -19,6 +19,7 @@ class Drawview: UIView {
             }
         }
     }
+    var moveRecognizer: UIPanGestureRecognizer!
     
     @IBInspectable var finishedLineColor: UIColor = UIColor.blackColor() {
         didSet {
@@ -41,16 +42,28 @@ class Drawview: UIView {
     required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
         
-        let doubleTapRecognizer = UITapGestureRecognizer(target: self, action: #selector(Drawview.doubleTap(_:)))
+        let doubleTapRecognizer = UITapGestureRecognizer(target: self, action: #selector(DrawView.doubleTap(_:)))
         doubleTapRecognizer.numberOfTapsRequired = 2
         doubleTapRecognizer.delaysTouchesBegan = true
         addGestureRecognizer(doubleTapRecognizer)
         
-        let tapRecognizer = UITapGestureRecognizer(target: self, action: #selector(Drawview.tap(_:)))
+        let tapRecognizer = UITapGestureRecognizer(target: self, action: #selector(DrawView.tap(_:)))
         tapRecognizer.delaysTouchesBegan = true
         tapRecognizer.requireGestureRecognizerToFail(doubleTapRecognizer)
         addGestureRecognizer(tapRecognizer)
         
+        let longPressRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(DrawView.longPress(_:)))
+        addGestureRecognizer(longPressRecognizer)
+        
+        moveRecognizer = UIPanGestureRecognizer(target: self, action: #selector(DrawView.moveLine))
+        moveRecognizer.delegate = self
+        moveRecognizer.cancelsTouchesInView = false
+        addGestureRecognizer(moveRecognizer)
+        
+    }
+    
+    func gestureRecognizer(gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWithGestureRecognizer otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        return true
     }
     
     func indexOfLineAtPoint(point: CGPoint) -> Int? {
@@ -82,7 +95,7 @@ class Drawview: UIView {
             
             becomeFirstResponder()
             
-            let deleteItem = UIMenuItem(title: "Delete", action: #selector(Drawview.deleteLine(_:)))
+            let deleteItem = UIMenuItem(title: "Delete", action: #selector(DrawView.deleteLine(_:)))
             menu.menuItems = [deleteItem]
             
             menu.setTargetRect(CGRect(x: point.x, y: point.y, width: 2, height: 2), inView: self)
@@ -95,10 +108,49 @@ class Drawview: UIView {
     }
     
     func doubleTap(gestureRecognizer: UITapGestureRecognizer) {
+        
         selectedLineIndex = nil
         currentLines.removeAll(keepCapacity: false)
         finishedLines.removeAll(keepCapacity: false)
+        
         setNeedsDisplay()
+    }
+    
+    func longPress(gestureRecognizer: UITapGestureRecognizer) {
+        
+        if gestureRecognizer.state == .Began {
+
+            let point = gestureRecognizer.locationInView(self)
+            selectedLineIndex = indexOfLineAtPoint(point)
+            
+            if selectedLineIndex != nil {
+                currentLines.removeAll(keepCapacity: false)
+            }
+        } else if gestureRecognizer.state == .Ended {
+
+            selectedLineIndex = nil
+        }
+        
+        setNeedsDisplay()
+    }
+    
+    func moveLine(gestureRecognizer: UIPanGestureRecognizer) {
+        if let index = selectedLineIndex {
+            if gestureRecognizer.state == .Changed {
+                let translation = gestureRecognizer.translationInView(self)
+                
+                finishedLines[index].begin.x += translation.x
+                finishedLines[index].begin.y += translation.y
+                finishedLines[index].end.x += translation.x
+                finishedLines[index].end.y += translation.y
+                
+                gestureRecognizer.setTranslation(CGPoint.zero, inView: self)
+                
+                setNeedsDisplay()
+            }
+        } else {
+            return
+        }
     }
     
     func strokeLine(line: Line) {
@@ -140,7 +192,6 @@ class Drawview: UIView {
             let selectedLine = finishedLines[index]
             strokeLine(selectedLine)
         }
-        
     }
     
     override func touchesBegan(touches: Set<UITouch>, withEvent event: UIEvent?) {
@@ -155,6 +206,7 @@ class Drawview: UIView {
     }
     
     override func touchesMoved(touches: Set<UITouch>, withEvent event: UIEvent?) {
+        
         for touch in touches {
             let key = NSValue(nonretainedObject: touch)
             currentLines[key]?.end = touch.locationInView(self)
@@ -163,6 +215,7 @@ class Drawview: UIView {
     }
     
     override func touchesEnded(touches: Set<UITouch>, withEvent event: UIEvent?) {
+        
         for touch in touches {
             let key = NSValue(nonretainedObject: touch)
             if var line = currentLines[key] {
